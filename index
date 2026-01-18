@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מערכת ניהול זמן Tetraism</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #64748b;
+            --accent: #f59e0b;
+            --extra-day: #10b981;
+            --leap-day: #ef4444;
+        }
+        body {
+            background-color: #f1f5f9;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        /* Grid setup: exactly 10 columns for a full decade */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 4px;
+        }
+        .day-card {
+            transition: all 0.2s;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.8rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            cursor: pointer;
+            position: relative;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            color: #1e293b;
+        }
+        .day-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            filter: brightness(0.95);
+        }
+        /* Today highlight */
+        .is-today {
+            outline: 3px solid #3b82f6;
+            z-index: 10;
+        }
+        /* Has Tasks highlight: Green background for normal days */
+        .has-tasks {
+            background-color: #22c55e !important;
+            color: white !important;
+            border-color: #16a34a !important;
+        }
+        
+        /* Extra days rule: Background stays, text becomes blue if has tasks */
+        .extra-day-has-tasks span {
+            color: #2563eb !important; /* Blue text for the symbol */
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+            filter: drop-shadow(0 0 2px rgba(0,0,0,0.2));
+        }
+
+        .month-header {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white;
+            padding: 8px;
+            border-radius: 8px 8px 0 0;
+            text-align: center;
+            font-weight: bold;
+            font-size: 1rem;
+        }
+        #analogClock {
+            width: 120px;
+            height: 120px;
+            border: 4px solid #1e293b;
+            border-radius: 50%;
+            position: relative;
+            background: white;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom;
+            border-radius: 4px;
+            transform: translateX(-50%);
+        }
+        .hour-hand { width: 4px; height: 30%; background: #1e293b; z-index: 3; }
+        .minute-hand { width: 2px; height: 42%; background: #2563eb; z-index: 2; }
+        .second-hand { width: 1px; height: 45%; background: #ef4444; z-index: 1; }
+        .clock-number {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: #1e293b;
+            transform: translate(-50%, -50%);
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.active { display: flex; }
+        .settings-panel {
+            display: none;
+            position: fixed;
+            top: 0; right: 0; width: 350px; height: 100%;
+            background: white;
+            z-index: 1100;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.1);
+            overflow-y: auto;
+            transition: transform 0.3s;
+        }
+        .settings-panel.active { display: block; }
+        
+        .dots-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 1200;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 50%;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border: 1px solid #eee;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div onclick="toggleSettings()" class="dots-btn" title="הגדרות">
+        <div class="dot w-1 h-1 bg-gray-800 rounded-full"></div>
+        <div class="dot w-1 h-1 bg-gray-800 rounded-full"></div>
+        <div class="dot w-1 h-1 bg-gray-800 rounded-full"></div>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="settingsPanel" class="settings-panel p-6">
+        <div class="flex justify-between items-center mb-6 border-b pb-4">
+            <h2 class="text-xl font-bold">הגדרות לוח שנה</h2>
+            <button onclick="toggleSettings()" class="text-2xl hover:text-red-500">&times;</button>
+        </div>
+        
+        <div class="space-y-6">
+            <div>
+                <label class="block text-sm font-bold mb-2">שנת אפס היסטורית (Offset)</label>
+                <input type="number" id="settingOffset" class="w-full p-2 border rounded" onchange="updateSettings()">
+            </div>
+            <div>
+                <label class="block text-sm font-bold mb-2">שמות ימי השבוע (1-10)</label>
+                <div id="daySettings" class="grid grid-cols-2 gap-2"></div>
+            </div>
+            <div>
+                <label class="block text-sm font-bold mb-2">שמות חודשים (1-12)</label>
+                <div id="monthSettings" class="space-y-2 h-48 overflow-y-auto pr-2"></div>
+            </div>
+
+            <div class="pt-4 border-t space-y-3">
+                <button onclick="resetToDefaults()" class="w-full py-2 text-red-600 border border-red-600 rounded hover:bg-red-50 font-bold transition">איפוס לברירת מחדל</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clock Header -->
+    <div class="flex flex-wrap justify-between items-center max-w-5xl mx-auto mb-6 bg-slate-800 text-white p-6 rounded-2xl shadow-lg border-b-4 border-blue-500 gap-4">
+        <div id="digitalClock" class="text-4xl font-mono font-bold text-blue-400">0:00:00</div>
+        <div class="text-center">
+            <h2 class="text-xs uppercase tracking-widest opacity-70">זמן עשורי</h2>
+            <div id="dateDisplay" class="text-sm font-bold">טוען...</div>
+        </div>
+        <div id="analogClock">
+            <div id="hourHand" class="hand hour-hand"></div>
+            <div id="minuteHand" class="hand minute-hand"></div>
+            <div id="secondHand" class="hand second-hand"></div>
+        </div>
+    </div>
+
+    <div class="max-w-5xl mx-auto">
+        <header class="text-center mb-10 bg-white p-8 rounded-2xl shadow-sm border border-gray-100">
+            <h1 class="text-4xl font-black text-gray-900 mb-2">לוח שנה עשורי</h1>
+            <div class="flex items-center justify-center gap-6 mt-8">
+                <button onclick="changeYear(-1)" class="bg-gray-800 text-white w-10 h-10 rounded-full hover:bg-black transition flex items-center justify-center"> → </button>
+                <span id="currentYearDisplay" class="text-5xl font-black text-gray-800">12,026</span>
+                <button onclick="changeYear(1)" class="bg-gray-800 text-white w-10 h-10 rounded-full hover:bg-black transition flex items-center justify-center"> ← </button>
+            </div>
+            <div id="leapYearStatus" class="mt-4 text-sm font-bold text-rose-500 h-6"></div>
+        </header>
+
+        <div id="monthsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+
+        <div class="mt-12 p-8 bg-white rounded-2xl shadow-md border-t-4 border-emerald-500">
+            <h2 class="text-2xl font-black text-gray-800 mb-6">ימים חוץ-חודשיים (אחרית השנה)</h2>
+            <div id="extraDaysContainer" class="grid grid-cols-2 md:grid-cols-6 gap-4"></div>
+        </div>
+    </div>
+
+    <!-- Task Modal -->
+    <div id="scheduleModal" class="modal">
+        <div class="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col shadow-2xl m-4">
+            <div class="p-6 bg-blue-600 text-white flex justify-between items-center">
+                <h3 id="modalTitle" class="text-xl font-bold">מערכת שעות</h3>
+                <button onclick="closeModal()" class="text-white text-2xl font-bold">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-grow bg-slate-50" id="scheduleList"></div>
+            <div class="p-4 border-t bg-white flex justify-end">
+                <button onclick="saveSchedule()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">שמור</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const DEFAULTS = {
+            offset: 10000,
+            months: ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שביעי", "שמיני", "תשיעי", "עשירי", "אחד-עשר", "שנים-עשר"],
+            days: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+        };
+
+        let config = JSON.parse(localStorage.getItem('tetra_config')) || { ...DEFAULTS };
+        let currentYear = new Date().getFullYear() + config.offset;
+        let selectedDateKey = "";
+        const specialDays = ["α", "β", "γ", "δ", "ε", "Telade"];
+        // Modal titles for extra days
+        const specialDayLabels = ["אחרית 1", "אחרית 2", "אחרית 3", "אחרית 4", "אחרית 5", "אחרית ¼"];
+
+        function toggleSettings() { document.getElementById('settingsPanel').classList.toggle('active'); }
+
+        function initSettingsUI() {
+            document.getElementById('settingOffset').value = config.offset;
+            const dayContainer = document.getElementById('daySettings');
+            dayContainer.innerHTML = '';
+            config.days.forEach((day, i) => {
+                dayContainer.innerHTML += `<input type="text" value="${day}" onchange="updateDayConfig(${i}, this.value)" class="p-1 border rounded text-xs text-center">`;
+            });
+            const monthContainer = document.getElementById('monthSettings');
+            monthContainer.innerHTML = '';
+            config.months.forEach((month, i) => {
+                monthContainer.innerHTML += `<div class="flex items-center gap-2"><span class="text-[10px] w-4 text-gray-400">${i+1}</span><input type="text" value="${month}" onchange="updateMonthConfig(${i}, this.value)" class="w-full p-1 border rounded text-sm"></div>`;
+            });
+        }
+
+        function updateDayConfig(i, v) { config.days[i] = v; saveAndRefresh(); }
+        function updateMonthConfig(i, v) { config.months[i] = v; saveAndRefresh(); }
+        function updateSettings() { config.offset = parseInt(document.getElementById('settingOffset').value) || 0; saveAndRefresh(); }
+        
+        function resetToDefaults() { 
+            if(confirm("האם אתה בטוח שברצונך לאפס את כל ההגדרות? (המשימות לא יימחקו)")) {
+                config = { ...DEFAULTS, months: [...DEFAULTS.months], days: [...DEFAULTS.days] }; 
+                saveAndRefresh(); 
+                initSettingsUI(); 
+            }
+        }
+        
+        function saveAndRefresh() { localStorage.setItem('tetra_config', JSON.stringify(config)); renderCalendar(); }
+
+        function updateClocks() {
+            const now = new Date();
+            const ms = (now.getHours() * 3600000) + (now.getMinutes() * 60000) + (now.getSeconds() * 1000) + now.getMilliseconds();
+            const dayPercent = ms / 86400000;
+            const totalDecSecs = Math.floor(dayPercent * 100000);
+            const h = Math.floor(totalDecSecs / 10000);
+            const m = Math.floor((totalDecSecs % 10000) / 100);
+            const s = totalDecSecs % 100;
+            document.getElementById('digitalClock').innerText = `${h}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+            document.getElementById('hourHand').style.transform = `translateX(-50%) rotate(${(dayPercent * 10) * 36}deg)`;
+            document.getElementById('minuteHand').style.transform = `translateX(-50%) rotate(${(m + s/100) * 3.6}deg)`;
+            document.getElementById('secondHand').style.transform = `translateX(-50%) rotate(${s * 3.6}deg)`;
+        }
+
+        function getTetraTodayKey() {
+            const now = new Date();
+            const start = new Date(now.getFullYear(), 0, 1);
+            const dayOfYear = Math.floor((now - start) / 86400000);
+            const year = now.getFullYear() + config.offset;
+            if (dayOfYear < 360) return `${year}-${Math.floor(dayOfYear / 30)}-${(dayOfYear % 30) + 1}`;
+            return `${year}-extra-${dayOfYear - 360}`;
+        }
+
+        function renderCalendar() {
+            const container = document.getElementById('monthsContainer');
+            const extraContainer = document.getElementById('extraDaysContainer');
+            const savedData = JSON.parse(localStorage.getItem('tetra_schedule') || '{}');
+            const todayKey = getTetraTodayKey();
+
+            container.innerHTML = '';
+            extraContainer.innerHTML = '';
+            document.getElementById('currentYearDisplay').innerText = currentYear;
+            const isLeap = ( (currentYear-config.offset)%4===0 && (currentYear-config.offset)%100!==0 ) || (currentYear-config.offset)%400===0;
+            document.getElementById('leapYearStatus').innerText = isLeap ? "✨ שנה מעוברת - יום Telade ✨" : "";
+
+            config.months.forEach((name, mIdx) => {
+                const monthCard = document.createElement('div');
+                monthCard.className = 'bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100 flex flex-col';
+                let html = `<div class="month-header">${name}</div><div class="p-3">`;
+                
+                html += `<div class="calendar-grid mb-2">`;
+                config.days.forEach(d => html += `<div class="text-[9px] text-gray-400 font-bold text-center">${d}</div>`);
+                html += `</div>`;
+
+                html += `<div class="calendar-grid">`;
+                for (let d = 1; d <= 30; d++) {
+                    const key = `${currentYear}-${mIdx}-${d}`;
+                    const hasTasks = savedData[key] && Object.keys(savedData[key]).length > 0;
+                    const isToday = key === todayKey;
+                    
+                    html += `<div onclick="openDay(${currentYear}, ${mIdx}, ${d})" 
+                                  class="day-card ${isToday ? 'is-today' : ''} ${hasTasks ? 'has-tasks' : ''}">
+                                  <span>${d}</span>
+                             </div>`;
+                }
+                html += `</div></div>`;
+                monthCard.innerHTML = html;
+                container.appendChild(monthCard);
+            });
+
+            const totalExtra = isLeap ? 6 : 5;
+            for (let i = 0; i < totalExtra; i++) {
+                const key = `${currentYear}-extra-${i}`;
+                const hasTasks = savedData[key] && Object.keys(savedData[key]).length > 0;
+                const isToday = key === todayKey;
+                const card = document.createElement('div');
+                card.onclick = () => openDay(currentYear, 'extra', i);
+                
+                let baseColorClass = i === 5 ? 'bg-rose-500' : 'bg-emerald-500';
+                card.className = `day-card text-white h-14 text-lg shadow-md ${isToday ? 'is-today' : ''} ${baseColorClass} ${hasTasks ? 'extra-day-has-tasks' : ''}`;
+                
+                card.innerHTML = `<span>${specialDays[i]}</span>`;
+                extraContainer.appendChild(card);
+            }
+        }
+
+        function openDay(y, m, d) {
+            selectedDateKey = `${y}-${m}-${d}`;
+            const savedData = JSON.parse(localStorage.getItem('tetra_schedule') || '{}');
+            const dayTasks = savedData[selectedDateKey] || {};
+            const list = document.getElementById('scheduleList');
+            
+            if (m === 'extra') {
+                document.getElementById('modalTitle').innerText = `${specialDayLabels[d]} / ${y}`;
+            } else {
+                document.getElementById('modalTitle').innerText = `${d}/${m+1}/${y}`;
+            }
+
+            list.innerHTML = '';
+            for (let h = 0; h < 10; h++) {
+                list.innerHTML += `<div class="mb-3 flex gap-3 items-center"><div class="w-10 text-xs font-bold text-blue-600">ש' ${h}</div><input class="flex-grow p-2 border rounded-lg text-sm" data-hour="${h}" value="${dayTasks[h]||''}"></div>`;
+            }
+            document.getElementById('scheduleModal').classList.add('active');
+        }
+
+        function saveSchedule() {
+            const savedData = JSON.parse(localStorage.getItem('tetra_schedule') || '{}');
+            const dayTasks = {};
+            document.querySelectorAll('#scheduleList input').forEach(inp => { if (inp.value.trim()) dayTasks[inp.dataset.hour] = inp.value.trim(); });
+            
+            if (Object.keys(dayTasks).length > 0) {
+                savedData[selectedDateKey] = dayTasks;
+            } else {
+                delete savedData[selectedDateKey];
+            }
+            
+            localStorage.setItem('tetra_schedule', JSON.stringify(savedData));
+            closeModal();
+            renderCalendar();
+        }
+
+        function closeModal() { document.getElementById('scheduleModal').classList.remove('active'); }
+        function changeYear(n) { currentYear += n; renderCalendar(); }
+
+        function initClockNumbers() {
+            const clock = document.getElementById('analogClock');
+            for (let i = 0; i < 10; i++) {
+                const num = document.createElement('div');
+                num.className = 'clock-number';
+                num.innerText = i;
+                const angle = (i * 36) * (Math.PI / 180);
+                num.style.left = (50 + 42 * Math.sin(angle)) + '%';
+                num.style.top = (50 - 42 * Math.cos(angle)) + '%';
+                clock.appendChild(num);
+            }
+        }
+
+        setInterval(updateClocks, 100);
+        window.onload = () => { initSettingsUI(); initClockNumbers(); renderCalendar(); updateClocks(); };
+    </script>
+</body>
+</html>
